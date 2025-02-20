@@ -28,7 +28,7 @@ class Ingredient(CookbookEntry):
 app = Flask(__name__)
 
 # Store your recipes here!
-cookbook = None
+cookbook = {}
 
 # Task 1 helper (don't touch)
 @app.route("/parse", methods=['POST'])
@@ -51,16 +51,17 @@ def parse_handwriting(recipeName: str) -> Union[str | None]:
 		else:
 			lastCha = 'anything'
 		if cha == '-' or cha == '_' or cha == ' ':
-			if lastCha != ' ':
+			if lastCha != ' ':						# So that there is just one space
 				goodRecipeName += ' '
 		elif cha.isalpha():
-			if t == False:
+			if t == False:							# Uppercase the first letter
 				goodRecipeName += cha.upper()
 				t = True
 			elif lastCha == ' ':
-				goodRecipeName += cha.upper()
+				goodRecipeName += cha.upper()		# Uppercase the first letter of a word
 			else:
-				goodRecipeName += cha.lower()
+				goodRecipeName += cha.lower()		# Lowercase the rest of the letters
+    
 	if len(goodRecipeName) == 0:
 		return None
 	recipeName = goodRecipeName
@@ -79,7 +80,7 @@ def create_entry():
 	if entries_name in cookbook:
 		return 'Entry names already exists', 400
 	if entries_type == 'ingredient':
-		cookTime = data.get('cookTime', '')
+		cookTime = int(data.get('cookTime', ''))
 		if cookTime <= 0:
 			return 'Invalid cookTime', 400
 	cookbook[entries_name] = data
@@ -87,18 +88,40 @@ def create_entry():
 
 
 # [TASK 3] ====================================================================
-# Endpoint that returns a summary of a recipe that corresponds to a query name
+# Endpoint that returns a summary of a recipe that corresponds to a query name   
 @app.route('/summary', methods=['GET'])
 def summary():
-	recipe_name = request.args.get('name', '')
-	if recipe_name not in cookbook:
-		return 'Recipe not found', 400
-	recipe = cookbook[recipe_name]
-	if recipe['type'] != 'recipe':
-		return 'Invalid type', 400
-	total_cook_time = 0
-	ingredients = {}
-	return 'not implemented', 500
+    recipe_name = request.args.get('name', '')
+    if recipe_name not in cookbook or cookbook[recipe_name]["type"] != "recipe":
+        return 'Invalid recipe', 400
+    
+    total_cooktime = 0
+    ingredients = {}
+    
+    def process_requiredItems(item_name, quantity):
+        nonlocal total_cooktime
+        if item_name not in cookbook:
+            return False
+        item = cookbook[item_name]
+        if item["type"] == "ingredient":
+            total_cooktime += item["cookTime"] * quantity
+            ingredients[item_name] = ingredients.get(item_name, 0) + quantity
+        elif item["type"] == "recipe":
+            for sub_item in item["requiredItems"]:
+                if not process_requiredItems(sub_item["name"], sub_item["quantity"] * quantity):
+                    return False
+        return True
+    
+    for required_item in cookbook[recipe_name]["requiredItems"]:
+        if not process_requiredItems(required_item["name"], required_item["quantity"]):
+            return 'Invalid recipe', 400
+    
+    return jsonify({
+        "name": recipe_name,
+        "cookTime": total_cooktime,
+        "ingredients": [{"name": name, "quantity": qty} for name, qty in ingredients.items()]
+    })
+
 
 
 # =============================================================================
